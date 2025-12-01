@@ -4,21 +4,51 @@ from __future__ import annotations
 
 import json
 import threading
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 import importlib.util
+
+import config
 
 BASE_URL = "https://fapi.binance.com"
 STREAM_URL = "wss://fstream.binance.com/stream"
 
 
+def _create_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=config.REQUEST_RETRIES,
+        backoff_factor=config.REQUEST_BACKOFF_FACTOR,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("HEAD", "GET", "OPTIONS"),
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+SESSION = _create_session()
+
+
+def _get(url: str, *, params: Optional[dict] = None) -> requests.Response:
+    try:
+        response = SESSION.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return response
+    except requests.exceptions.RequestException as exc:  # pragma: no cover - network safety
+        raise RuntimeError(f"Failed to fetch {url}: {exc}") from exc
+
+
 def get_futures_symbols() -> List[str]:
     """Получить список USDT-маржинальных фьючерсов Binance (perpetual, активные)."""
     url = f"{BASE_URL}/fapi/v1/exchangeInfo"
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
+    response = _get(url)
     data = response.json()
     symbols = []
     for symbol_info in data.get("symbols", []):
@@ -35,8 +65,7 @@ def get_historical_klines(symbol: str, interval: str, limit: int) -> pd.DataFram
     """Загрузить последние 1m свечи для символа."""
     url = f"{BASE_URL}/fapi/v1/klines"
     params = {"symbol": symbol, "interval": interval, "limit": limit}
-    response = requests.get(url, params=params, timeout=10)
-    response.raise_for_status()
+    response = _get(url, params=params)
     klines = response.json()
     columns = [
         "open_time",
@@ -84,17 +113,11 @@ def get_funding_and_oi(symbol: str) -> Dict:
     funding_url = f"{BASE_URL}/fapi/v1/fundingRate"
     oi_url = f"{BASE_URL}/futures/data/openInterestHist"
 
-    funding_resp = requests.get(
-        funding_url, params={"symbol": symbol, "limit": 1}, timeout=10
-    )
-    funding_resp.raise_for_status()
+    funding_resp = _get(funding_url, params={"symbol": symbol, "limit": 1})
     funding_data = funding_resp.json()
     funding_rate = float(funding_data[0]["fundingRate"]) if funding_data else None
 
-    oi_resp = requests.get(
-        oi_url, params={"symbol": symbol, "period": "5m", "limit": 1}, timeout=10
-    )
-    oi_resp.raise_for_status()
+    oi_resp = _get(oi_url, params={"symbol": symbol, "period": "5m", "limit": 1})
     oi_data = oi_resp.json()
     open_interest = float(oi_data[0]["sumOpenInterest"]) if oi_data else None
 
