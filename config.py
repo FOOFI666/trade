@@ -40,3 +40,31 @@ LOG_SIGNALS_TO_CONSOLE = True
 LOG_SIGNALS_TO_FILE = True
 SIGNALS_LOG_PATH = "signals.log"
 ENABLE_TELEGRAM_NOTIFICATIONS = False
+
+# === Rule-based улучшения ===
+MIN_QUOTE_VOLUME_1M = 50_000
+MIN_QUOTE_VOLUME_60M = 1_000_000
+SIGNAL_COOLDOWN_MINUTES = 30
+CONFIRMATION_BARS = 1
+
+# === Нейросеть ===
+ENABLE_NN_ENTRY = True
+NN_MODEL_PATH = "models/entry_nn.pt"
+NN_WINDOW_SIZE = 60
+NN_FEATURE_COLUMNS = [
+    "close",
+    "volume",
+    "atr_60",
+    "atr_30",
+    "bbw",
+    "bbw_percentile",
+    "vol_ratio_60",
+    "vol_ratio_30",
+    "body_ratio",
+    "buy_ratio",
+    "rel_strength_180",
+]
+NN_ENTRY_THRESHOLD = 0.9
+NN_HIDDEN_SIZES = (128, 64)
+LOG_NN_SIGNALS_TO_FILE = True
+LOG_NN_SIGNALS_TO_CONSOLE = True

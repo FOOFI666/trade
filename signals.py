@@ -44,6 +44,17 @@ def compute_long_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["high"].rolling(config.BASE_RANGE_WINDOW, min_periods=1).max().shift(1)
     )
 
+    df["quote_volume_60m"] = df.get("quote_volume", pd.Series(index=df.index)).rolling(
+        60, min_periods=1
+    ).sum()
+
+    liquidity_ok = pd.Series(True, index=df.index)
+    if "quote_volume" in df.columns:
+        liquidity_ok = (
+            (df["quote_volume"] >= config.MIN_QUOTE_VOLUME_1M)
+            & (df["quote_volume_60m"] >= config.MIN_QUOTE_VOLUME_60M)
+        )
+
     atr_condition = pd.Series(True, index=df.index)
     if {"atr_30", "candle_range"}.issubset(df.columns):
         atr_condition = df["candle_range"] >= config.ATR_MULTIPLIER_ENTRY * df["atr_30"]
@@ -54,7 +65,21 @@ def compute_long_entry_signals(df: pd.DataFrame) -> pd.DataFrame:
         df.get("body_ratio", pd.Series(index=df.index, dtype=float)) >= config.BODY_RATIO_ENTRY,
         (df["close"] > df["base_high"]) | (df["high"] > df["base_high"]),
         atr_condition,
+        liquidity_ok,
     ]
 
-    df["long_entry"] = pd.concat(conditions, axis=1).all(axis=1)
+    df["rule_long_entry"] = pd.concat(conditions, axis=1).all(axis=1)
+
+    if config.CONFIRMATION_BARS > 0:
+        df["rule_long_entry_confirmed"] = (
+            df["rule_long_entry"]
+            .rolling(config.CONFIRMATION_BARS, min_periods=1)
+            .max()
+            .astype(bool)
+        )
+    else:
+        df["rule_long_entry_confirmed"] = df["rule_long_entry"]
+
+    df["rule_long_entry"] = df["rule_long_entry_confirmed"]
+    df["long_entry"] = df["rule_long_entry"]
     return df
