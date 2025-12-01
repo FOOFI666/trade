@@ -1,7 +1,20 @@
-"""Configuration parameters for the pre-pump long strategy."""
+"""Central configuration for Binance futures pre-pump scanner."""
 
-# Thresholds for pre-pump detection
-PRE_PUMP_SCORE_THRESHOLD = 3
+# Общие
+SYMBOLS_BLACKLIST: list[str] = []
+KLINE_INTERVAL = "1m"
+HISTORY_MINUTES = 60 * 24
+
+# Окна
+ATR_WINDOW = 60
+BBW_WINDOW = 60
+BBW_PERCENTILE_WINDOW = 60 * 24
+VOL_RATIO_60_WINDOW = 60
+VOL_RATIO_30_WINDOW = 30
+BODY_RATIO_MEAN_WINDOW = 30
+REL_STRENGTH_WINDOW = 180
+
+# Пороги pre-pump
 BBW_PERCENTILE_THRESHOLD = 10
 VOL_RATIO_60_MIN = 1.2
 VOL_RATIO_60_MAX = 3.0
@@ -11,19 +24,19 @@ BUY_RATIO_MIN = 0.6
 FUNDING_NEAR_ZERO = 0.0002
 OI_CHANGE_60_MIN = 0.05
 
-# Entry trigger parameters
+PRE_PUMP_SCORE_THRESHOLD = 3
+
+# Пороги входа (trigger)
 VOL_RATIO_30_ENTRY = 3.0
 BODY_RATIO_ENTRY = 0.6
 ATR_MULTIPLIER_ENTRY = 2.0
+BASE_RANGE_WINDOW = 60
 
-# Windows
-BASE_WINDOW_MINUTES = 60
+# BTC-референс
+BTC_SYMBOL = "BTCUSDT"
 
-# Backtest parameters
-INITIAL_BALANCE = 1000.0
-RISK_PER_TRADE = 0.01
-TAKE_PROFIT_MULTIPLIER = 3.0
-STOP_LOSS_MULTIPLIER = 1.0
-MAX_OPEN_TRADES = 5
-MAX_HOLDING_MINUTES = 240
-FEE_RATE = 0.0004
+# Логирование/оповещения
+LOG_SIGNALS_TO_CONSOLE = True
+LOG_SIGNALS_TO_FILE = True
+SIGNALS_LOG_PATH = "signals.log"
+ENABLE_TELEGRAM_NOTIFICATIONS = False
