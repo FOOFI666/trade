@@ -9,33 +9,29 @@ def compute_pre_pump_score(df: pd.DataFrame) -> pd.DataFrame:
     """Вычисление суммарного pre-pump score и флага is_pre_pump."""
     df["cond_bbw_low"] = (
         df.get("bbw_percentile", pd.Series(index=df.index, dtype=float))
-        < config.BBW_PERCENTILE_THRESHOLD
+        <= config.PRE_BBW_MAX_PERCENTILE
     ).fillna(False)
 
     vol_60 = df.get("vol_ratio_60", pd.Series(index=df.index, dtype=float))
     df["cond_vol_60_in_range"] = (
-        (vol_60 >= config.VOL_RATIO_60_MIN) & (vol_60 <= config.VOL_RATIO_60_MAX)
+        (vol_60 >= config.PRE_VOL60_MIN) & (vol_60 <= config.PRE_VOL60_MAX)
     ).fillna(False)
 
     body_ratio = df.get("body_ratio", pd.Series(index=df.index, dtype=float))
-    body_ratio_mean = body_ratio.rolling(config.BODY_RATIO_MEAN_WINDOW, min_periods=1).mean()
-    df["cond_body_ratio_low"] = (body_ratio_mean < config.BODY_RATIO_ACCUM_MAX).fillna(False)
+    body_ratio_mean = body_ratio.rolling(config.PRE_BODYR_WINDOW, min_periods=1).mean()
+    df["cond_body_ratio_low"] = (body_ratio_mean <= config.PRE_BODYR_MAX).fillna(False)
 
     rel_strength = df.get("rel_strength_180", pd.Series(index=df.index, dtype=float))
-    df["cond_rel_strength_pos"] = (rel_strength > config.REL_STRENGTH_MIN).fillna(False)
+    df["cond_rel_strength_pos"] = (rel_strength >= config.PRE_REL_STRENGTH_MIN).fillna(False)
 
-    if "buy_ratio" in df.columns:
-        buy_ratio_mean = df["buy_ratio"].rolling(config.BODY_RATIO_MEAN_WINDOW, min_periods=1).mean()
-        df["cond_buy_ratio_high"] = (buy_ratio_mean > config.BUY_RATIO_MIN).fillna(False)
-    else:
-        df["cond_buy_ratio_high"] = False
+    buy_ratio_mean = df.get("buy_ratio", pd.Series(index=df.index, dtype=float)).rolling(
+        config.PRE_BUYR_WINDOW, min_periods=1
+    ).mean()
+    df["cond_buy_ratio_high"] = (buy_ratio_mean >= config.PRE_BUYR_MIN).fillna(False)
 
-    if {"funding_rate", "oi_change_60"}.issubset(df.columns):
-        funding_ok = df["funding_rate"].abs() <= config.FUNDING_NEAR_ZERO
-        oi_ok = df["oi_change_60"] >= config.OI_CHANGE_60_MIN
-        df["cond_funding_oi_ok"] = (funding_ok & oi_ok).fillna(False)
-    else:
-        df["cond_funding_oi_ok"] = False
+    funding_ok = df.get("funding_rate", pd.Series(index=df.index, dtype=float)).abs() <= config.PRE_FUNDING_ABS_MAX
+    oi_ok = df.get("oi_change_60", pd.Series(index=df.index, dtype=float)) >= config.PRE_OI_CHANGE_MIN
+    df["cond_funding_oi_ok"] = (funding_ok & oi_ok).fillna(False)
 
     cond_cols = [
         "cond_bbw_low",
@@ -45,9 +41,8 @@ def compute_pre_pump_score(df: pd.DataFrame) -> pd.DataFrame:
         "cond_buy_ratio_high",
         "cond_funding_oi_ok",
     ]
-    score = df[cond_cols].astype(int).sum(axis=1)
-    df["pre_pump_score"] = score
-    df["is_pre_pump"] = df["pre_pump_score"] >= config.PRE_PUMP_SCORE_THRESHOLD
+    df["pre_pump_score"] = df[cond_cols].astype(int).sum(axis=1)
+    df["is_pre_pump"] = df["pre_pump_score"] >= config.PRE_PUMP_SCORE_MIN
     return df
 
 

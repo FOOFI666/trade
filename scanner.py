@@ -8,13 +8,11 @@ from datetime import datetime, timedelta
 from typing import Dict
 
 import pandas as pd
-import numpy as np
-
 import config
 import data_stream
 from binance_client import get_futures_symbols, start_kline_stream
 from features_pipeline import update_features
-from nn_entry_model import predict_entry_proba
+from ml.nn_inference import predict_pump_proba
 from signals import compute_long_entry_signals, compute_pre_pump_score
 
 
@@ -132,20 +130,11 @@ def main():
 
         if config.ENABLE_NN_ENTRY and not df.empty:
             row = df.iloc[-1]
-            if bool(row.get("is_pre_pump", False)) and len(df) >= config.NN_WINDOW_SIZE:
-                window_df = df.iloc[-config.NN_WINDOW_SIZE :]
-                features = []
-                for col in config.NN_FEATURE_COLUMNS:
-                    if col in window_df.columns:
-                        features.append(window_df[col].values)
-                    else:
-                        features.append(np.zeros(config.NN_WINDOW_SIZE))
-                window_features = np.stack(features, axis=1)
+            if len(df) >= config.NN_WINDOW_SIZE:
+                prob = predict_pump_proba(df.tail(config.NN_WINDOW_SIZE))
+                df.loc[df.index[-1], "nn_pump_proba"] = prob
 
-                prob = predict_entry_proba(window_features)
-                df.loc[df.index[-1], "nn_entry_proba"] = prob
-
-                if prob >= config.NN_ENTRY_THRESHOLD:
+                if prob >= config.NN_ENTRY_THRESHOLD and bool(row.get("is_pre_pump", False)):
                     now = datetime.fromtimestamp(row["timestamp"] / 1000.0)
                     if _can_emit_signal(symbol + "_NN", now):
                         _log_nn_signal(symbol, row, prob)
