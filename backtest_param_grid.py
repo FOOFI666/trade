@@ -10,7 +10,7 @@ from typing import Iterable, List
 import pandas as pd
 
 import config
-from binance_client import get_futures_symbols, get_historical_klines
+from binance_client import get_futures_symbols, get_historical_klines_cached
 from features_pipeline import update_features
 from signals import compute_long_entry_signals, compute_pre_pump_score
 
@@ -53,12 +53,7 @@ def _resolve_symbols(cli_symbols: Iterable[str]) -> List[str]:
 
 
 def _fetch_history(symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
-    df = get_historical_klines(
-        symbol,
-        interval,
-        start_time=start_time,
-        end_time=end_time,
-    )
+    df = get_historical_klines_cached(symbol, interval, start_time=start_time, end_time=end_time)
     if df.empty:
         return df
 

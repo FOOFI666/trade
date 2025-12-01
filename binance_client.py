@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 import pandas as pd
@@ -150,6 +151,90 @@ def get_historical_klines(
         ]
     ]
     return df
+
+
+def _get_kline_cache_path(symbol: str, interval: str) -> Path:
+    ext = "parquet" if config.KLINE_CACHE_FORMAT == "parquet" else "csv"
+    cache_dir = Path(config.KLINE_CACHE_DIR)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"{symbol}_{interval}.{ext}"
+
+
+def load_klines_from_cache(symbol: str, interval: str) -> pd.DataFrame | None:
+    if not config.USE_KLINE_CACHE or interval not in config.KLINE_CACHE_INTERVALS:
+        return None
+    path = _get_kline_cache_path(symbol, interval)
+    if not path.exists():
+        return None
+
+    if config.KLINE_CACHE_FORMAT == "parquet":
+        df = pd.read_parquet(path)
+    else:
+        df = pd.read_csv(path)
+
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    return df
+
+
+def save_klines_to_cache(symbol: str, interval: str, df: pd.DataFrame) -> None:
+    if not config.USE_KLINE_CACHE or interval not in config.KLINE_CACHE_INTERVALS:
+        return
+    path = _get_kline_cache_path(symbol, interval)
+    df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
+    if config.KLINE_CACHE_FORMAT == "parquet":
+        df.to_parquet(path, index=False)
+    else:
+        df.to_csv(path, index=False)
+
+
+def get_historical_klines_cached(
+    symbol: str,
+    interval: str,
+    start_time: Optional[int] = None,
+    end_time: Optional[int] = None,
+) -> pd.DataFrame:
+    cached = None if config.FORCE_REFRESH_KLINE_CACHE else load_klines_from_cache(symbol, interval)
+
+    if start_time is None or end_time is None:
+        now_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
+        end_time = end_time or now_ms
+        if start_time is None:
+            start_dt = pd.Timestamp(end_time, unit="ms", tz="UTC") - pd.Timedelta(
+                days=config.BACKTEST_DAYS
+            )
+            start_time = int(start_dt.timestamp() * 1000)
+
+    if cached is None or cached.empty:
+        df = get_historical_klines(symbol, interval, start_time=start_time, end_time=end_time)
+        save_klines_to_cache(symbol, interval, df)
+        return df
+
+    cached = cached.sort_values("timestamp")
+    cached_start = cached["timestamp"].iloc[0]
+    cached_end = cached["timestamp"].iloc[-1]
+
+    if start_time >= cached_start and end_time <= cached_end:
+        mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
+        return cached.loc[mask].reset_index(drop=True)
+
+    df_list = [cached]
+    need_update = False
+
+    if end_time > cached_end:
+        new_start = cached_end + 1
+        df_tail = get_historical_klines(symbol, interval, start_time=new_start, end_time=end_time)
+        if not df_tail.empty:
+            df_list.append(df_tail)
+            need_update = True
+
+    df_full = pd.concat(df_list, ignore_index=True)
+    df_full = df_full.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
+
+    if need_update:
+        save_klines_to_cache(symbol, interval, df_full)
+
+    mask = (df_full["timestamp"] >= start_time) & (df_full["timestamp"] <= end_time)
+    return df_full.loc[mask].reset_index(drop=True)
 
 
 def get_funding_and_oi(symbol: str) -> Dict:
