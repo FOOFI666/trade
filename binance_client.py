@@ -104,7 +104,10 @@ def get_funding_and_oi(symbol: str) -> Dict:
 def start_kline_stream(symbols: List[str], interval: str, on_message: Callable[[str, dict], None]):
     """Запуск WebSocket-потока для списка символов."""
     if importlib.util.find_spec("websocket") is None:
-        raise ImportError("The 'websocket-client' package is required for streaming.")
+        raise ImportError(
+            "The 'websocket-client' package is required for streaming. Install it with "
+            "'pip install websocket-client' or 'pip install -r requirements.txt'."
+        )
 
     import websocket  # type: ignore
 
