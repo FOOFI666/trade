@@ -84,6 +84,13 @@ BACKTEST_DAYS = 7
 BACKTEST_SYMBOLS: list[str] = []
 BACKTEST_OUTPUT_PATH = "backtest_signals.csv"
 
+# === КЭШ СВЕЧЕЙ ===
+USE_KLINE_CACHE = True
+KLINE_CACHE_DIR = "data/klines"
+KLINE_CACHE_FORMAT = "parquet"  # "csv" или "parquet"
+KLINE_CACHE_INTERVALS = ["1m"]
+FORCE_REFRESH_KLINE_CACHE = False
+
 # Параметрический гридсерч
 PARAM_GRID = [
     {

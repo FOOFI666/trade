@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import pandas as pd
 
 import config
-from binance_client import get_historical_klines
+from binance_client import get_historical_klines_cached
 
 symbol_data: Dict[str, pd.DataFrame] = {}
 btc_data: Optional[pd.DataFrame] = None
@@ -17,15 +17,26 @@ def init_symbol_data(symbols: list[str]):
     """Load historical data for all symbols and initialize caches."""
     global btc_data
 
+    end_time_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
+    start_time_ms = end_time_ms - config.HISTORY_MINUTES * 60 * 1000
+
     for symbol in symbols:
-        df = get_historical_klines(symbol, config.KLINE_INTERVAL, config.HISTORY_MINUTES)
+        df = get_historical_klines_cached(
+            symbol,
+            config.KLINE_INTERVAL,
+            start_time=start_time_ms,
+            end_time=end_time_ms,
+        )
         symbol_data[symbol] = df
 
     if config.BTC_SYMBOL in symbol_data:
         btc_data = symbol_data[config.BTC_SYMBOL].copy()
     else:
-        btc_data = get_historical_klines(
-            config.BTC_SYMBOL, config.KLINE_INTERVAL, config.HISTORY_MINUTES
+        btc_data = get_historical_klines_cached(
+            config.BTC_SYMBOL,
+            config.KLINE_INTERVAL,
+            start_time=start_time_ms,
+            end_time=end_time_ms,
         )
 
 
