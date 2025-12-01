@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Dict
 
@@ -155,6 +156,13 @@ def main():
                 _log_signal(symbol, df.iloc[-1])
 
     start_kline_stream(symbols, config.KLINE_INTERVAL, on_kline)
+
+    # Keep the main thread alive while the stream is running
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        logger.info("Scanner stopped by user")
 
 
 if __name__ == "__main__":
