@@ -1,5 +1,7 @@
 """Volume and candle shape feature engineering."""
+
 import pandas as pd
+
 from utils import safe_divide, sma
 
 
@@ -11,11 +13,10 @@ def add_basic_candle_metrics(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_volume_relative(df: pd.DataFrame, window: int, col_name: str) -> pd.DataFrame:
+def add_volume_relative(df: pd.DataFrame, window: int, ma_col: str, ratio_col: str) -> pd.DataFrame:
     """Add rolling mean volume and relative volume ratio."""
-    ma_col = f"vol_ma_{window}"
     df[ma_col] = sma(df["volume"], window)
-    df[col_name] = safe_divide(df["volume"], df[ma_col])
+    df[ratio_col] = safe_divide(df["volume"], df[ma_col])
     return df
 
 
