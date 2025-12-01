@@ -12,12 +12,9 @@ import numpy as np
 import config
 import data_stream
 from binance_client import get_futures_symbols, start_kline_stream
-from funding_features import add_funding_zscore, add_open_interest_change
+from features_pipeline import update_features
 from nn_entry_model import predict_entry_proba
 from signals import compute_long_entry_signals, compute_pre_pump_score
-from strength_features import add_relative_strength
-from volatility_features import add_atr, add_bbw_percentile, add_bollinger_bandwidth, add_true_range
-from volume_features import add_basic_candle_metrics, add_taker_metrics, add_volume_relative
 
 
 logger = logging.getLogger("scanner")
@@ -56,27 +53,7 @@ def _update_features_for_symbol(symbol: str) -> pd.DataFrame:
     if df.empty:
         return df
 
-    add_true_range(df)
-    add_atr(df, config.ATR_WINDOW, "atr_60")
-    add_atr(df, config.VOL_RATIO_30_WINDOW, "atr_30")
-
-    add_bollinger_bandwidth(df, config.BBW_WINDOW, 2.0, "bbw")
-    add_bbw_percentile(df, "bbw", config.BBW_PERCENTILE_WINDOW, "bbw_percentile")
-
-    add_basic_candle_metrics(df)
-    add_volume_relative(df, config.VOL_RATIO_60_WINDOW, "vol_ma_60", "vol_ratio_60")
-    add_volume_relative(df, config.VOL_RATIO_30_WINDOW, "vol_ma_30", "vol_ratio_30")
-    add_taker_metrics(df)
-
-    if data_stream.btc_data is not None and not data_stream.btc_data.empty:
-        df = add_relative_strength(
-            df, data_stream.btc_data, config.REL_STRENGTH_WINDOW, "rel_strength_180"
-        )
-
-    if {"funding_rate"}.issubset(df.columns):
-        add_funding_zscore(df, config.BODY_RATIO_MEAN_WINDOW)
-    if "open_interest" in df.columns:
-        add_open_interest_change(df, config.VOL_RATIO_60_WINDOW, "oi_change_60")
+    df = update_features(df, data_stream.btc_data)
 
     data_stream.symbol_data[symbol] = df
     return df

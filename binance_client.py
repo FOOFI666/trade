@@ -61,12 +61,56 @@ def get_futures_symbols() -> List[str]:
     return symbols
 
 
-def get_historical_klines(symbol: str, interval: str, limit: int) -> pd.DataFrame:
-    """Загрузить последние 1m свечи для символа."""
+def get_historical_klines(
+    symbol: str,
+    interval: str,
+    limit: int | None = None,
+    start_time: int | None = None,
+    end_time: int | None = None,
+) -> pd.DataFrame:
+    """Загрузить исторические свечи для символа.
+
+    Можно ограничить количеством свечей (limit) или указать интервал start_time/end_time
+    в миллисекундах. Если задан start_time, данные будут запрошены по частям до
+    достижения end_time или отсутствия новых данных.
+    """
+
+    if limit is None and start_time is None:
+        raise ValueError("Either limit or start_time must be provided for historical klines")
+
     url = f"{BASE_URL}/fapi/v1/klines"
-    params = {"symbol": symbol, "interval": interval, "limit": limit}
-    response = _get(url, params=params)
-    klines = response.json()
+    max_limit = 1500
+    klines = []
+
+    if start_time is not None:
+        current_start = int(start_time)
+        while True:
+            params = {
+                "symbol": symbol,
+                "interval": interval,
+                "limit": max_limit,
+                "startTime": current_start,
+            }
+            if end_time is not None:
+                params["endTime"] = end_time
+
+            response = _get(url, params=params)
+            batch = response.json()
+            if not batch:
+                break
+
+            klines.extend(batch)
+
+            last_close_time = batch[-1][6]
+            if end_time is not None and last_close_time >= end_time:
+                break
+            if len(batch) < max_limit:
+                break
+            current_start = last_close_time + 1
+    else:
+        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        response = _get(url, params=params)
+        klines = response.json()
     columns = [
         "open_time",
         "open",
