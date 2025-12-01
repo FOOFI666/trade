@@ -95,6 +95,32 @@ def _log_signal(symbol: str, row: pd.Series):
     _maybe_send_telegram(message)
 
 
+def _log_debug_conditions(symbol: str, row: pd.Series):
+    if not getattr(config, "DEBUG_LOG_CONDITIONS", False):
+        return
+
+    cond_names = [
+        "cond_bbw_low",
+        "cond_vol_60_in_range",
+        "cond_body_ratio_low",
+        "cond_rel_strength_pos",
+        "cond_buy_ratio_high",
+        "cond_funding_oi_ok",
+    ]
+
+    satisfied = [name for name in cond_names if bool(row.get(name, False))]
+    if not satisfied:
+        return
+
+    timestamp = datetime.fromtimestamp(row["timestamp"] / 1000.0)
+    msg = (
+        f"DEBUG CONDITIONS {symbol} at {timestamp}: "
+        f"score={row.get('pre_pump_score', 0):.0f}, "
+        f"flags={','.join(satisfied)}"
+    )
+    logger.info(msg)
+
+
 def _log_nn_signal(symbol: str, row: pd.Series, prob: float):
     timestamp = datetime.fromtimestamp(row["timestamp"] / 1000.0)
     message = (
@@ -122,6 +148,9 @@ def main():
         df = _update_features_for_symbol(symbol)
         df = compute_pre_pump_score(df)
         df = compute_long_entry_signals(df)
+
+        if not df.empty:
+            _log_debug_conditions(symbol, df.iloc[-1])
 
         if config.ENABLE_NN_ENTRY and not df.empty:
             row = df.iloc[-1]
