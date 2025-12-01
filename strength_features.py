@@ -1,4 +1,5 @@
 """Relative strength features against BTC benchmark."""
+
 import pandas as pd
 
 
@@ -18,13 +19,14 @@ def add_relative_strength(
         df_btc[["timestamp", "close"]].rename(columns={"close": "close_btc"}),
         on="timestamp",
         how="inner",
+        suffixes=("", "_btc"),
     )
     merged["return_asset"] = (merged["close"] - merged["close"].shift(window)) / merged[
         "close"
     ].shift(window)
-    merged["return_btc"] = (merged["close_btc"] - merged["close_btc"].shift(window)) / merged[
-        "close_btc"
-    ].shift(window)
+    merged["return_btc"] = (
+        merged["close_btc"] - merged["close_btc"].shift(window)
+    ) / merged["close_btc"].shift(window)
     merged[col_name] = merged["return_asset"] - merged["return_btc"]
     df_asset = merged.drop(columns=["close_btc", "return_asset", "return_btc"])
     return df_asset
