@@ -39,16 +39,14 @@ def _resolve_symbols(cli_symbols: Iterable[str]) -> List[str]:
 
 def _fetch_history(symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
     cached = load_klines_from_cache(symbol, interval)
-    if cached is not None and not cached.empty:
-        cached = cached.sort_values("timestamp")
-        cached_start = cached["timestamp"].iloc[0]
-        cached_end = cached["timestamp"].iloc[-1]
-
-        if start_time >= cached_start and end_time <= cached_end:
-            mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
-            cached_slice = cached.loc[mask].reset_index(drop=True)
-            if not cached_slice.empty:
-                return cached_slice
+    if cached is not None:
+        cached = (
+            cached.sort_values("timestamp")
+            .drop_duplicates(subset=["timestamp"], keep="last")
+            .reset_index(drop=True)
+        )
+        mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
+        return cached.loc[mask].reset_index(drop=True)
 
     df = get_historical_klines_cached(symbol, interval, start_time=start_time, end_time=end_time)
     if df.empty:
@@ -106,7 +104,7 @@ def main():
 
     all_signals: list[dict] = []
     for symbol in symbols:
-        print(f"Downloading {symbol} history...")
+        print(f"Loading {symbol} history...")
         df = _fetch_history(symbol, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
         if df.empty:
             continue
