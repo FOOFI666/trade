@@ -10,7 +10,7 @@ from typing import Iterable, List
 import pandas as pd
 
 import config
-from binance_client import get_futures_symbols, get_historical_klines_cached
+from binance_client import get_futures_symbols, get_historical_klines_cached, load_klines_from_cache
 from features_pipeline import update_features
 from signals import compute_long_entry_signals, compute_pre_pump_score
 
@@ -53,6 +53,16 @@ def _resolve_symbols(cli_symbols: Iterable[str]) -> List[str]:
 
 
 def _fetch_history(symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
+    cached = load_klines_from_cache(symbol, interval)
+    if cached is not None:
+        cached = (
+            cached.sort_values("timestamp")
+            .drop_duplicates(subset=["timestamp"], keep="last")
+            .reset_index(drop=True)
+        )
+        mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
+        return cached.loc[mask].reset_index(drop=True)
+
     df = get_historical_klines_cached(symbol, interval, start_time=start_time, end_time=end_time)
     if df.empty:
         return df
@@ -113,7 +123,7 @@ def main():
 
     all_signals: list[dict] = []
     for symbol in symbols:
-        print(f"Downloading {symbol} history...")
+        print(f"Loading {symbol} history...")
         raw_df = _fetch_history(symbol, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
         if raw_df.empty:
             continue
