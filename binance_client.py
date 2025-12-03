@@ -209,32 +209,27 @@ def get_historical_klines_cached(
         save_klines_to_cache(symbol, interval, df)
         return df
 
-    cached = cached.sort_values("timestamp")
-    cached_start = cached["timestamp"].iloc[0]
-    cached_end = cached["timestamp"].iloc[-1]
+    cached = (
+        cached.sort_values("timestamp")
+        .drop_duplicates(subset=["timestamp"])
+        .reset_index(drop=True)
+    )
 
-    if start_time >= cached_start and end_time <= cached_end:
-        mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
-        return cached.loc[mask].reset_index(drop=True)
+    if start_time is None and end_time is None:
+        return cached
 
-    df_list = [cached]
-    need_update = False
+    mask = pd.Series([True] * len(cached))
+    if start_time is not None:
+        mask &= cached["timestamp"] >= start_time
+    if end_time is not None:
+        mask &= cached["timestamp"] <= end_time
 
-    if end_time > cached_end:
-        new_start = cached_end + 1
-        df_tail = get_historical_klines(symbol, interval, start_time=new_start, end_time=end_time)
-        if not df_tail.empty:
-            df_list.append(df_tail)
-            need_update = True
+    filtered = cached.loc[mask].reset_index(drop=True)
 
-    df_full = pd.concat(df_list, ignore_index=True)
-    df_full = df_full.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
+    if not filtered.empty:
+        return filtered
 
-    if need_update:
-        save_klines_to_cache(symbol, interval, df_full)
-
-    mask = (df_full["timestamp"] >= start_time) & (df_full["timestamp"] <= end_time)
-    return df_full.loc[mask].reset_index(drop=True)
+    return cached
 
 
 def get_funding_and_oi(symbol: str) -> Dict:
