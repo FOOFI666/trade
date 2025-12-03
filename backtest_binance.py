@@ -10,11 +10,8 @@ from typing import Iterable, List
 import pandas as pd
 
 import config
-from binance_client import (
-    get_futures_symbols,
-    get_historical_klines_cached,
-    load_klines_from_cache,
-)
+from binance_client import get_futures_symbols, load_klines_from_cache
+from data_range_cache import load_range_klines
 from features_pipeline import update_features
 from signals import compute_long_entry_signals, compute_pre_pump_score
 
@@ -56,35 +53,6 @@ def _find_available_range(symbols: Iterable[str], interval: str) -> tuple[int, i
     return min(starts), max(ends)
 
 
-def _fetch_history(
-    symbol: str, interval: str, start_time: int | None, end_time: int | None
-) -> pd.DataFrame:
-    cached = load_klines_from_cache(symbol, interval)
-    if cached is not None:
-        cached = (
-            cached.sort_values("timestamp")
-            .drop_duplicates(subset=["timestamp"], keep="last")
-            .reset_index(drop=True)
-        )
-        if start_time is None and end_time is None:
-            return cached
-
-        mask = pd.Series(True, index=cached.index)
-        if start_time is not None:
-            mask &= cached["timestamp"] >= start_time
-        if end_time is not None:
-            mask &= cached["timestamp"] <= end_time
-        return cached.loc[mask].reset_index(drop=True)
-
-    df = get_historical_klines_cached(symbol, interval, start_time=start_time, end_time=end_time)
-    if df.empty:
-        return df
-
-    df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
-    df.reset_index(drop=True, inplace=True)
-    return df
-
-
 def _gather_signal_rows(symbol: str, df: pd.DataFrame) -> list[dict]:
     signal_rows = []
     mask = df.get("long_entry", pd.Series(False, index=df.index)).astype(bool)
@@ -108,11 +76,20 @@ def _gather_signal_rows(symbol: str, df: pd.DataFrame) -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(description="Offline backtest for Binance long-entry signals")
-    parser.add_argument("--days", type=int, default=config.BACKTEST_DAYS, help="Number of days to backtest")
-    parser.add_argument("--symbols", type=str, default="", help="Comma-separated list of symbols to backtest")
-    parser.add_argument("--start", type=str, help="Start datetime (ISO format)")
+    parser.add_argument(
+        "--start",
+        type=str,
+        help="Start datetime (ISO format, e.g. 2025-11-19 or 2025-11-19T00:00:00)",
+    )
     parser.add_argument("--end", type=str, help="End datetime (ISO format)")
-    parser.add_argument("--output", type=str, default=config.BACKTEST_OUTPUT_PATH, help="CSV output path")
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=config.BACKTEST_DAYS,
+        help="If --start is not set: number of days before --end",
+    )
+    parser.add_argument("--symbols", type=str, default="", help="Comma-separated list of symbols to backtest")
+    parser.add_argument("--output", type=str, help="CSV output path")
     parser.add_argument(
         "--use-cache-range",
         action="store_true",
@@ -132,22 +109,35 @@ def main():
     if cache_range:
         start_time_ms, end_time_ms = cache_range
     else:
-        end_time_ms = _parse_date_ms(args.end) if args.end else int(datetime.now(tz=timezone.utc).timestamp() * 1000)
-        if args.start:
+        if args.start and args.end:
             start_time_ms = _parse_date_ms(args.start)
+            end_time_ms = _parse_date_ms(args.end)
         else:
-            start_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc) - timedelta(days=args.days)
-            start_time_ms = int(start_dt.timestamp() * 1000)
+            end_time_ms = _parse_date_ms(args.end) if args.end else int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+            if args.start:
+                start_time_ms = _parse_date_ms(args.start)
+            else:
+                start_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc) - timedelta(days=args.days)
+                start_time_ms = int(start_dt.timestamp() * 1000)
 
-    print(f"Backtesting interval: {config.BACKTEST_INTERVAL} from {pd.to_datetime(start_time_ms, unit='ms')} to {pd.to_datetime(end_time_ms, unit='ms')}")
+    start_dt = pd.to_datetime(start_time_ms, unit="ms")
+    end_dt = pd.to_datetime(end_time_ms, unit="ms")
+    print(f"Backtesting interval: {config.BACKTEST_INTERVAL} from {start_dt} to {end_dt}")
     print(f"Symbols to process: {len(symbols)}")
 
-    btc_df = _fetch_history(config.BTC_SYMBOL, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
+    if args.output:
+        output_path = args.output
+    else:
+        start_str = start_dt.strftime("%Y%m%d_%H%M%S")
+        end_str = end_dt.strftime("%Y%m%d_%H%M%S")
+        output_path = f"backtest_signals_{start_str}__{end_str}.csv"
+
+    btc_df = load_range_klines(config.BTC_SYMBOL, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
 
     all_signals: list[dict] = []
     for symbol in symbols:
         print(f"Loading {symbol} history...")
-        df = _fetch_history(symbol, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
+        df = load_range_klines(symbol, config.BACKTEST_INTERVAL, start_time_ms, end_time_ms)
         if df.empty:
             continue
 
@@ -163,9 +153,9 @@ def main():
 
     signals_df = pd.DataFrame(all_signals)
     signals_df.sort_values(["timestamp", "symbol"], inplace=True)
-    signals_df.to_csv(args.output, index=False)
+    signals_df.to_csv(output_path, index=False)
 
-    print(f"Saved {len(signals_df)} signals to {args.output}")
+    print(f"Saved {len(signals_df)} signals to {output_path}")
     counts = Counter(signals_df["symbol"])
     top_symbols = counts.most_common(5)
     print("Top symbols by signals:")

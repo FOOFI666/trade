@@ -91,6 +91,10 @@ KLINE_CACHE_FORMAT = "parquet"  # "csv" или "parquet"
 KLINE_CACHE_INTERVALS = ["1m"]
 FORCE_REFRESH_KLINE_CACHE = False
 
+# Диапазонные файлы со свечами
+RANGE_KLINES_DIR = "data/range_klines"
+RANGE_KLINES_FORMAT = "parquet"  # "parquet" или "csv"
+
 # Параметрический гридсерч
 PARAM_GRID = [
     {
