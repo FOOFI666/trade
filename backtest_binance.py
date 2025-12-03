@@ -37,7 +37,28 @@ def _resolve_symbols(cli_symbols: Iterable[str]) -> List[str]:
     return symbols
 
 
-def _fetch_history(symbol: str, interval: str, start_time: int, end_time: int) -> pd.DataFrame:
+def _find_available_range(symbols: Iterable[str], interval: str) -> tuple[int, int] | None:
+    starts: list[int] = []
+    ends: list[int] = []
+
+    for sym in symbols:
+        cached = load_klines_from_cache(sym, interval)
+        if cached is None or cached.empty:
+            continue
+
+        cached = cached.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
+        starts.append(int(cached["timestamp"].iloc[0]))
+        ends.append(int(cached["timestamp"].iloc[-1]))
+
+    if not starts or not ends:
+        return None
+
+    return min(starts), max(ends)
+
+
+def _fetch_history(
+    symbol: str, interval: str, start_time: int | None, end_time: int | None
+) -> pd.DataFrame:
     cached = load_klines_from_cache(symbol, interval)
     if cached is not None:
         cached = (
@@ -45,7 +66,14 @@ def _fetch_history(symbol: str, interval: str, start_time: int, end_time: int) -
             .drop_duplicates(subset=["timestamp"], keep="last")
             .reset_index(drop=True)
         )
-        mask = (cached["timestamp"] >= start_time) & (cached["timestamp"] <= end_time)
+        if start_time is None and end_time is None:
+            return cached
+
+        mask = pd.Series(True, index=cached.index)
+        if start_time is not None:
+            mask &= cached["timestamp"] >= start_time
+        if end_time is not None:
+            mask &= cached["timestamp"] <= end_time
         return cached.loc[mask].reset_index(drop=True)
 
     df = get_historical_klines_cached(symbol, interval, start_time=start_time, end_time=end_time)
@@ -85,17 +113,31 @@ def main():
     parser.add_argument("--start", type=str, help="Start datetime (ISO format)")
     parser.add_argument("--end", type=str, help="End datetime (ISO format)")
     parser.add_argument("--output", type=str, default=config.BACKTEST_OUTPUT_PATH, help="CSV output path")
+    parser.add_argument(
+        "--use-cache-range",
+        action="store_true",
+        help="Use full range from cached klines instead of specifying a start/end",
+    )
     args = parser.parse_args()
-
-    end_time_ms = _parse_date_ms(args.end) if args.end else int(datetime.now(tz=timezone.utc).timestamp() * 1000)
-    if args.start:
-        start_time_ms = _parse_date_ms(args.start)
-    else:
-        start_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc) - timedelta(days=args.days)
-        start_time_ms = int(start_dt.timestamp() * 1000)
 
     cli_symbols = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     symbols = _resolve_symbols(cli_symbols)
+
+    cache_range = None
+    if args.use_cache_range:
+        cache_range = _find_available_range([config.BTC_SYMBOL, *symbols], config.BACKTEST_INTERVAL)
+        if cache_range is None:
+            raise ValueError("No cached klines found for the requested interval.")
+
+    if cache_range:
+        start_time_ms, end_time_ms = cache_range
+    else:
+        end_time_ms = _parse_date_ms(args.end) if args.end else int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+        if args.start:
+            start_time_ms = _parse_date_ms(args.start)
+        else:
+            start_dt = datetime.fromtimestamp(end_time_ms / 1000, tz=timezone.utc) - timedelta(days=args.days)
+            start_time_ms = int(start_dt.timestamp() * 1000)
 
     print(f"Backtesting interval: {config.BACKTEST_INTERVAL} from {pd.to_datetime(start_time_ms, unit='ms')} to {pd.to_datetime(end_time_ms, unit='ms')}")
     print(f"Symbols to process: {len(symbols)}")
